@@ -1,0 +1,165 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Telegram Cloud Vault - Media Player</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <style>
+        body { background: #0f172a; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        .navbar { background: #1e293b; border-bottom: 1px solid #334155; }
+        .card { background: #1e293b; border: 1px solid #334155; transition: transform 0.2s, box-shadow 0.2s; }
+        .card:hover { transform: translateY(-4px); box-shadow: 0 10px 25px rgba(0,0,0,0.5); border-color: #38bdf8; }
+        .media-thumb { height: 180px; object-fit: cover; width: 100%; border-top-left-radius: calc(0.375rem - 1px); border-top-right-radius: calc(0.375rem - 1px); }
+        .video-placeholder { height: 180px; display: flex; align-items: center; justify-content: center; background: #0b1329; color: #38bdf8; font-size: 3rem; }
+        .modal-content { background: #0f172a; border: 1px solid #334155; color: #f8fafc; }
+        .badge-enc { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid #0284c7; }
+    </style>
+</head>
+<body>
+<nav class="navbar navbar-dark px-4 py-3 mb-4">
+    <div class="container-fluid">
+        <span class="navbar-brand mb-0 h1 d-flex align-items-center gap-2">
+            <i class="bi bi-shield-lock text-info"></i>
+            <span>Encrypted Telegram Media Vault</span>
+        </span>
+        <span class="badge badge-enc px-3 py-2 rounded-pill">
+            <i class="bi bi-google"></i> 5 TB Google Drive (rclone crypt)
+        </span>
+    </div>
+</nav>
+
+<div class="container pb-5">
+    <div class="row g-4" id="media-grid">
+        <div class="col-12 text-center py-5 text-secondary">
+            <div class="spinner-border text-info mb-3" role="status"></div>
+            <div>Loading media stream catalog from Google Drive...</div>
+        </div>
+    </div>
+</div>
+
+<!-- Video/Photo Modal Player -->
+<div class="modal fade" id="playerModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-xl">
+        <div class="modal-content">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title" id="playerTitle">Media Preview</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center p-0" id="playerBody" style="background: #000; min-height: 400px; display:flex; align-items:center; justify-content:center;">
+                <!-- Dynamically injected player or img -->
+            </div>
+            <div class="modal-footer border-secondary justify-content-between">
+                <div class="text-secondary small" id="playerMeta"></div>
+                <a id="playerDownloadBtn" class="btn btn-outline-info btn-sm" target="_blank">
+                    <i class="bi bi-download"></i> Direct Stream
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+const playerModal = new bootstrap.Modal(document.getElementById('playerModal'));
+const playerBody = document.getElementById('playerBody');
+const playerTitle = document.getElementById('playerTitle');
+const playerMeta = document.getElementById('playerMeta');
+const playerDownloadBtn = document.getElementById('playerDownloadBtn');
+
+async function loadMedia() {
+    try {
+        const res = await fetch('/api/media');
+        const items = await res.json();
+        const grid = document.getElementById('media-grid');
+        
+        if (items.length === 0) {
+            grid.innerHTML = `
+                <div class="col-12 text-center py-5 text-secondary">
+                    <i class="bi bi-inbox fs-1 d-block mb-3"></i>
+                    <h5>No media uploaded yet</h5>
+                    <p>Send photos, audio, or videos to <b>@MyBackupDownloader_Bot</b> in Telegram to populate your cloud vault.</p>
+                </div>`;
+            return;
+        }
+
+        grid.innerHTML = items.map(item => {
+            const isVideo = item.type === 'video';
+            const isAudio = item.type === 'audio';
+            const isImage = item.type === 'image';
+            
+            const streamUrl = `/stream?path=${encodeURIComponent(item.path)}`;
+            
+            let previewElement = '';
+            if (isImage) {
+                previewElement = `<img src="${streamUrl}" class="media-thumb" loading="lazy">`;
+            } else if (isVideo) {
+                previewElement = `<div class="video-placeholder"><i class="bi bi-play-circle"></i></div>`;
+            } else {
+                previewElement = `<div class="video-placeholder"><i class="bi bi-music-note-beamed"></i></div>`;
+            }
+
+            return `
+            <div class="col-12 col-sm-6 col-md-4 col-lg-3">
+                <div class="card h-100" style="cursor: pointer;" onclick="openPlayer('${encodeURIComponent(JSON.stringify(item))}')">
+                    ${previewElement}
+                    <div class="card-body p-3">
+                        <h6 class="card-title text-truncate mb-1" title="${item.filename}">${item.filename}</h6>
+                        <div class="d-flex justify-content-between text-secondary small mb-2">
+                            <span><i class="bi bi-chat"></i> ${item.chat || 'General'}</span>
+                            <span>${(item.size / (1024*1024)).toFixed(1)} MB</span>
+                        </div>
+                        ${item.caption ? `<p class="card-text text-truncate small text-light">${item.caption}</p>` : ''}
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+
+    } catch (err) {
+        console.error(err);
+        document.getElementById('media-grid').innerHTML = `
+            <div class="col-12 text-center py-5 text-danger">
+                <i class="bi bi-exclamation-triangle fs-1 d-block mb-3"></i>
+                <h5>Error loading vault catalog</h5>
+                <p>${err.message}</p>
+            </div>`;
+    }
+}
+
+function openPlayer(encodedItem) {
+    const item = JSON.parse(decodeURIComponent(encodedItem));
+    const streamUrl = `/stream?path=${encodeURIComponent(item.path)}`;
+    playerTitle.textContent = item.filename;
+    playerMeta.innerHTML = `Chat: <b>${item.chat || 'N/A'}</b> | Time: ${item.timestamp || 'N/A'}`;
+    playerDownloadBtn.href = streamUrl;
+
+    if (item.type === 'video') {
+        playerBody.innerHTML = `
+            <video controls autoplay class="w-100" style="max-height: 75vh; outline:none;">
+                <source src="${streamUrl}" type="video/mp4">
+                Your browser does not support the video tag.
+            </video>`;
+    } else if (item.type === 'image') {
+        playerBody.innerHTML = `<img src="${streamUrl}" class="img-fluid" style="max-height: 75vh; object-fit: contain;">`;
+    } else if (item.type === 'audio') {
+        playerBody.innerHTML = `
+            <div class="p-5 w-100">
+                <i class="bi bi-file-earmark-music fs-1 text-info mb-3 d-block"></i>
+                <audio controls autoplay class="w-75">
+                    <source src="${streamUrl}">
+                </audio>
+            </div>`;
+    }
+
+    playerModal.show();
+}
+
+document.getElementById('playerModal').addEventListener('hidden.bs.modal', () => {
+    playerBody.innerHTML = '';
+});
+
+loadMedia();
+</script>
+</body>
+</html>
