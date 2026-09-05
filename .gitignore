@@ -17,3 +17,7 @@ metadata.jsonl
 *.session
 *.session-journal
 rclone.conf
+
+# Local SQLite vault database
+vault.db*
+
