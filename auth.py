@@ -1,28 +1,22 @@
 ﻿import httpx
 import jwt
 from jwt import PyJWKClient
-from fastapi import HTTPException, Security, Request
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import HTTPException, Request
 
 CSS_JWKS_URL = "http://127.0.0.1:5900/.well-known/jwks.json"
-security_bearer = HTTPBearer(auto_error=False)
 jwks_client = PyJWKClient(CSS_JWKS_URL)
 
-def verify_token(request: Request, creds: HTTPAuthorizationCredentials = Security(security_bearer)):
-    # 1. Allow internal localhost requests or check query param ?token= (for video streaming tags)
+def verify_token(request: Request):
+    auth_header = request.headers.get("Authorization", "")
     token = None
-    if creds:
-        token = creds.credentials
+    if auth_header.startswith("Bearer "):
+        token = auth_header.split(" ", 1)[1]
     elif "token" in request.query_params:
         token = request.query_params["token"]
     elif "auth_token" in request.cookies:
         token = request.cookies["auth_token"]
 
     if not token:
-        # Check if local internal request from 127.0.0.1
-        client_host = request.client.host if request.client else ""
-        if client_host in ["127.0.0.1", "localhost", "::1"]:
-            return {"sub": "internal", "roles": ["ROLE_ADMIN"]}
         raise HTTPException(status_code=401, detail="Authentication required (CSS JWT token)")
 
     try:

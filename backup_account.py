@@ -1,4 +1,4 @@
-﻿import re
+import re
 import asyncio
 from datetime import datetime
 from pathlib import Path
@@ -6,6 +6,7 @@ from telethon import TelegramClient, errors
 import user_engine
 import db
 import thumbnail_engine
+from parallel_downloader import MultiConnectionDownloader
 
 # Enable automatic reconnects and connection retries
 client = TelegramClient(
@@ -16,6 +17,7 @@ client = TelegramClient(
     retry_delay=5,
     auto_reconnect=True
 )
+fast_downloader = MultiConnectionDownloader(client, num_workers=4)
 
 URL_REGEX = re.compile(r'https?://[^\s<>"]+|www\.[^\s<>"]+')
 
@@ -104,7 +106,7 @@ async def backup_all_chats():
 
                         user_engine.logger.info(f"Downloading attachment (Msg ID: {message.id})...")
                         try:
-                            downloaded = await message.download_media(file=user_engine.LOCAL_TEMP_DIR)
+                            downloaded = await fast_downloader.download_media_fast(message, target_dir=user_engine.LOCAL_TEMP_DIR)
                             if not downloaded:
                                 continue
 

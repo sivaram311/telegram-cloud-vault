@@ -1,0 +1,83 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign in — Telegram Cloud Vault (Delena CSS)</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <style>
+        :root { --accent: #38bdf8; --bg: #0b1329; --card: #131f37; }
+        body { background: var(--bg); color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; min-height: 100vh; display: flex; align-items: center; justify-content: center; margin: 0; padding: 20px; }
+        .login-card { background: var(--card); border: 1px solid #1e293b; border-radius: 12px; max-width: 420px; width: 100%; box-shadow: 0 15px 35px rgba(0,0,0,0.5); padding: 32px; }
+        .brand-badge { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid #0284c7; }
+        .form-control { background: #070d1e; border: 1px solid #1e293b; color: #f8fafc; }
+        .form-control:focus { background: #070d1e; border-color: var(--accent); color: #fff; box-shadow: 0 0 0 0.25rem rgba(56, 189, 248, 0.25); }
+        .btn-signin { background: #0284c7; border: none; color: #fff; font-weight: 600; padding: 10px; }
+        .btn-signin:hover { background: #0369a1; color: #fff; }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <div class="text-center mb-4">
+            <span class="badge brand-badge px-3 py-2 rounded-pill mb-2">
+                <i class="bi bi-shield-lock-fill"></i> Centralized Security System
+            </span>
+            <h4 class="fw-bold mt-2">Telegram Media Vault</h4>
+            <p class="text-secondary small">Authenticate with your Delena CSS credentials to access encrypted media streams.</p>
+        </div>
+
+        <div id="errorAlert" class="alert alert-danger d-none py-2 small"></div>
+
+        <form id="loginForm" onsubmit="handleLogin(event)">
+            <div class="mb-3">
+                <label class="form-label small text-secondary">Username</label>
+                <input type="text" id="username" class="form-control" placeholder="Enter username" required autofocus autocomplete="username">
+            </div>
+            <div class="mb-4">
+                <label class="form-label small text-secondary">Password</label>
+                <input type="password" id="password" class="form-control" placeholder="Enter password" required autocomplete="current-password">
+            </div>
+            <button type="submit" id="submitBtn" class="btn btn-signin w-100 rounded-pill">
+                <span id="btnSpinner" class="spinner-border spinner-border-sm d-none" role="status"></span>
+                <span>Sign in</span>
+            </button>
+        </form>
+    </div>
+
+    <script>
+        async function handleLogin(e) {
+            e.preventDefault();
+            const btn = document.getElementById('submitBtn');
+            const spinner = document.getElementById('btnSpinner');
+            const err = document.getElementById('errorAlert');
+            
+            err.classList.add('d-none');
+            btn.disabled = true;
+            spinner.classList.remove('d-none');
+
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    throw new Error(data.detail || 'Invalid username or password');
+                }
+                // Redirect back to home
+                window.location.href = '/';
+            } catch (errExp) {
+                err.innerText = errExp.message;
+                err.classList.remove('d-none');
+                btn.disabled = false;
+                spinner.classList.add('d-none');
+            }
+        }
+    </script>
+</body>
+</html>
