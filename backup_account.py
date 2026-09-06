@@ -5,6 +5,7 @@ from pathlib import Path
 from telethon import TelegramClient, errors
 import user_engine
 import db
+import thumbnail_engine
 
 client = TelegramClient("user_personal_session", user_engine.API_ID, user_engine.API_HASH)
 
@@ -24,7 +25,6 @@ async def backup_all_chats():
     me = await client.get_me()
     user_engine.logger.info(f"Successfully logged in as: {me.first_name} (@{me.username}) ID: {me.id}")
     
-    # Fetch all dialogs (private chats, groups, channels)
     dialogs = await client.get_dialogs()
     user_engine.logger.info(f"Discovered {len(dialogs)} chats/groups across entire account.")
 
@@ -67,7 +67,6 @@ async def backup_all_chats():
 
             has_media = bool(message.media)
 
-            # Record message and references in SQLite
             db.record_message(
                 chat_id=chat_id,
                 message_id=message.id,
@@ -82,11 +81,8 @@ async def backup_all_chats():
                 has_media=has_media
             )
 
-            # Handle media download & sync
             if has_media:
-                # Check if already synced
                 if db.is_media_synced(chat_id, message.id):
-                    user_engine.logger.info(f"Skipping already synced media (Msg ID: {message.id})")
                     continue
 
                 user_engine.logger.info(f"Downloading attachment (Msg ID: {message.id})...")
@@ -101,12 +97,15 @@ async def backup_all_chats():
                     local_path.rename(final_local)
                     file_size = final_local.stat().st_size
 
-                    # Offload to encrypted Google Drive & purge local scratch
+                    # Generate fast WebP thumbnail onto T: cache disk before offload
+                    thumb_name = thumbnail_engine.generate_thumbnail(final_local, chat_id, message.id)
+
+                    # Offload to encrypted Google Drive and purge local S: scratch
                     uploaded = user_engine.offload_to_rclone(final_local, remote_folder)
                     remote_dest = f"{user_engine.RCLONE_REMOTE}/{remote_folder}"
+                    clean_remote_path = f"{remote_folder}/{safe_name}"
                     
                     if uploaded:
-                        # Record in metadata.jsonl for compatibility
                         user_engine.record_metadata(
                             chat_name=chat_title,
                             message_id=message.id,
@@ -116,15 +115,15 @@ async def backup_all_chats():
                             caption=text_content,
                             date_str=date_iso
                         )
-                        # Record in SQLite sync registry
                         db.record_media_item(
                             chat_id=chat_id,
                             message_id=message.id,
                             file_name=safe_name,
                             file_size=file_size,
                             mime_type="",
-                            remote_path=f"{remote_folder}/{safe_name}",
-                            sync_status="SYNCED"
+                            remote_path=clean_remote_path,
+                            sync_status="SYNCED",
+                            thumbnail_path=thumb_name
                         )
                     else:
                         db.record_media_item(
@@ -133,8 +132,9 @@ async def backup_all_chats():
                             file_name=safe_name,
                             file_size=file_size,
                             mime_type="",
-                            remote_path=f"{remote_folder}/{safe_name}",
-                            sync_status="FAILED"
+                            remote_path=clean_remote_path,
+                            sync_status="FAILED",
+                            thumbnail_path=thumb_name
                         )
                 except errors.FloodWaitError as e:
                     user_engine.logger.warning(f"Telegram FloodWait: sleeping {e.seconds}s...")
@@ -142,7 +142,6 @@ async def backup_all_chats():
                 except Exception as e:
                     user_engine.logger.error(f"Failed to process message {message.id}: {e}")
 
-            # Update chat checkpoint
             if count % 10 == 0 or count == 1:
                 db.update_chat_checkpoint(chat_id, latest_msg_id, "SYNCING")
 

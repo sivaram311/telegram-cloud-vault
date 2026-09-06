@@ -49,6 +49,7 @@ def init_db():
             mime_type TEXT,
             remote_path TEXT,
             sync_status TEXT DEFAULT 'PENDING',
+            thumbnail_path TEXT,
             synced_at TIMESTAMP,
             UNIQUE(chat_id, message_id, file_name)
         );
@@ -102,16 +103,23 @@ def record_message(chat_id: int, message_id: int, sender_id: int, sender_name: s
             date_iso, text or "", json.dumps(links or []), reply_to, forward_from, 1 if has_media else 0
         ))
 
-def record_media_item(chat_id: int, message_id: int, file_name: str, file_size: int, mime_type: str, remote_path: str, sync_status: str = "PENDING"):
+def record_media_item(chat_id: int, message_id: int, file_name: str, file_size: int, mime_type: str, remote_path: str, sync_status: str = "PENDING", thumbnail_path: str = None):
     with get_db() as conn:
         conn.execute("""
-            INSERT INTO media_sync (chat_id, message_id, file_name, file_size, mime_type, remote_path, sync_status, synced_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'SYNCED' THEN CURRENT_TIMESTAMP ELSE NULL END)
+            INSERT INTO media_sync (chat_id, message_id, file_name, file_size, mime_type, remote_path, sync_status, thumbnail_path, synced_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'SYNCED' THEN CURRENT_TIMESTAMP ELSE NULL END)
             ON CONFLICT(chat_id, message_id, file_name) DO UPDATE SET
                 remote_path = excluded.remote_path,
                 sync_status = excluded.sync_status,
+                thumbnail_path = COALESCE(excluded.thumbnail_path, media_sync.thumbnail_path),
                 synced_at = CASE WHEN excluded.sync_status = 'SYNCED' THEN CURRENT_TIMESTAMP ELSE media_sync.synced_at END
-        """, (chat_id, message_id, file_name, file_size, mime_type, remote_path, sync_status, sync_status))
+        """, (chat_id, message_id, file_name, file_size, mime_type, remote_path, sync_status, thumbnail_path, sync_status))
+
+def update_media_thumbnail(chat_id: int, message_id: int, thumbnail_path: str):
+    with get_db() as conn:
+        conn.execute("""
+            UPDATE media_sync SET thumbnail_path = ? WHERE chat_id = ? AND message_id = ?
+        """, (thumbnail_path, chat_id, message_id))
 
 def is_media_synced(chat_id: int, message_id: int, file_name: str = None) -> bool:
     with get_db() as conn:
@@ -140,4 +148,4 @@ def get_vault_stats():
 
 if __name__ == "__main__":
     init_db()
-    print("Database initialized successfully.")
+    print("Database schema verified.")

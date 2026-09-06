@@ -6,15 +6,24 @@ import io
 import json
 from pathlib import Path
 from typing import Optional
+from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException, Request, Response, Query, Depends
-from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse, RedirectResponse
 import db
 import auth
 
 app = FastAPI(title="Telegram Encrypted Media Vault & Search Engine")
 
 RCLONE_HTTP_UPSTREAM = os.getenv("RCLONE_HTTP_UPSTREAM", "http://127.0.0.1:3455")
+CSS_AUTH_URL = os.getenv("CSS_AUTH_URL", "http://127.0.0.1:5900/auth/login")
+THUMBNAILS_DIR = Path(os.getenv("THUMBNAILS_DIR", "T:/thumbnails"))
+
 INDEX_HTML = Path("templates/index.html")
+LOGIN_HTML = Path("templates/login.html")
+
+class LoginPayload(BaseModel):
+    username: str
+    password: str
 
 def get_media_type(filename: str) -> str:
     mime, _ = mimetypes.guess_type(filename)
@@ -32,47 +41,120 @@ def get_media_type(filename: str) -> str:
 def on_startup():
     db.init_db()
 
-@app.get("/", response_class=FileResponse)
-async def home():
-    return FileResponse(INDEX_HTML)
+@app.get("/login", response_class=FileResponse)
+async def login_page():
+    return FileResponse(LOGIN_HTML)
+
+@app.post("/api/login")
+async def login_api(payload: LoginPayload, response: Response):
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            res = await client.post(
+                CSS_AUTH_URL,
+                json={
+                    "username": payload.username,
+                    "password": payload.password,
+                    "clientId": "telegram-vault"
+                }
+            )
+            if res.status_code != 200:
+                raise HTTPException(status_code=401, detail="Invalid credentials or unauthorized in Delena CSS")
+            data = res.json()
+            token = data.get("accessToken")
+            response.set_cookie(
+                key="auth_token",
+                value=token,
+                httponly=True,
+                max_age=data.get("expiresIn", 900),
+                samesite="lax",
+                path="/"
+            )
+            return {"status": "ok", "token": token}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"CSS connection error: {str(e)}")
+
+@app.get("/logout")
+async def logout():
+    resp = RedirectResponse(url="/login")
+    resp.delete_cookie("auth_token", path="/")
+    return resp
+
+@app.get("/")
+async def home(request: Request):
+    try:
+        auth.verify_token(request)
+        return FileResponse(INDEX_HTML)
+    except HTTPException:
+        return RedirectResponse(url="/login")
 
 @app.get("/api/stats")
 async def stats(user: dict = Depends(auth.verify_token)):
     return db.get_vault_stats()
 
+@app.get("/api/thumbnail/{thumb_name}")
+async def get_thumbnail(thumb_name: str, request: Request, user: dict = Depends(auth.verify_token)):
+    thumb_path = THUMBNAILS_DIR / thumb_name
+    if not thumb_path.exists():
+        raise HTTPException(status_code=404, detail="Thumbnail not found")
+    return FileResponse(
+        thumb_path, 
+        media_type="image/webp",
+        headers={"Cache-Control": "public, max-age=2592000"}  # 30 days cache
+    )
+
 @app.get("/api/media")
 async def list_media(
     search: Optional[str] = Query(None),
     chat: Optional[str] = Query(None),
-    limit: int = Query(200, le=1000),
-    offset: int = Query(0, ge=0),
+    page: int = Query(1, ge=1),
+    limit: int = Query(30, ge=5, le=100),
     user: dict = Depends(auth.verify_token)
 ):
+    offset = (page - 1) * limit
     with db.get_db() as conn:
-        query = """
+        count_query = """
+            SELECT COUNT(*)
+            FROM media_sync s
+            JOIN messages m ON s.chat_id = m.chat_id AND s.message_id = m.message_id
+            JOIN chats c ON s.chat_id = c.chat_id
+            WHERE s.sync_status = 'SYNCED'
+        """
+        data_query = """
             SELECT m.chat_id, c.chat_title, m.message_id, m.sender_name, m.date, m.text_content, 
-                   s.file_name, s.remote_path, s.sync_status
+                   s.file_name, s.remote_path, s.sync_status, s.thumbnail_path
             FROM media_sync s
             JOIN messages m ON s.chat_id = m.chat_id AND s.message_id = m.message_id
             JOIN chats c ON s.chat_id = c.chat_id
             WHERE s.sync_status = 'SYNCED'
         """
         params = []
+        where_clauses = []
+
         if chat:
-            query += " AND c.chat_title LIKE ?"
+            where_clauses.append("c.chat_title LIKE ?")
             params.append(f"%{chat}%")
         if search:
-            query += " AND (m.text_content LIKE ? OR s.file_name LIKE ? OR m.sender_name LIKE ?)"
+            where_clauses.append("(m.text_content LIKE ? OR s.file_name LIKE ? OR m.sender_name LIKE ?)")
             params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
-        
-        query += " ORDER BY m.date DESC LIMIT ? OFFSET ?"
-        params.extend([limit, offset])
 
-        rows = conn.execute(query, params).fetchall()
+        if where_clauses:
+            clause = " AND " + " AND ".join(where_clauses)
+            count_query += clause
+            data_query += clause
+
+        total_items = conn.execute(count_query, params).fetchone()[0]
+
+        data_query += " ORDER BY m.date DESC LIMIT ? OFFSET ?"
+        exec_params = params + [limit, offset]
+        rows = conn.execute(data_query, exec_params).fetchall()
+
         items = []
         for r in rows:
             fname = r["file_name"]
             mtype = get_media_type(fname)
+            thumb_url = f"/api/thumbnail/{r['thumbnail_path']}" if r["thumbnail_path"] else None
             items.append({
                 "filename": fname,
                 "chat": r["chat_title"],
@@ -81,9 +163,23 @@ async def list_media(
                 "timestamp": r["date"],
                 "caption": r["text_content"],
                 "type": mtype,
+                "thumbnail_url": thumb_url,
                 "stream_url": f"/stream/{r['remote_path']}"
             })
-        return items
+
+        total_pages = (total_items + limit - 1) // limit if total_items > 0 else 1
+
+        return {
+            "items": items,
+            "pagination": {
+                "total_items": total_items,
+                "page": page,
+                "limit": limit,
+                "total_pages": total_pages,
+                "has_next": page < total_pages,
+                "has_prev": page > 1
+            }
+        }
 
 @app.get("/api/messages")
 async def search_messages(
