@@ -1,4 +1,4 @@
-﻿# Telegram Cloud Vault & Media Player
+# Telegram Cloud Vault & Media Player
 
 Automated system to back up Telegram account messages and media attachments directly into an encrypted Google Drive vault (via `rclone crypt`), with on-the-fly decryption and a web-based streaming player.
 

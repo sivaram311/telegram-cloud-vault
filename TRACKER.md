@@ -1,7 +1,7 @@
-﻿# Telegram Automation - Task & Execution Tracker
+# Telegram Automation - Task & Execution Tracker
 
 ## System Snapshot (Recorded 2026-09-06)
-- **Account**: `<telegram-account>` (User ID: `<account-id>`)
+- **Account**: `<telegram-account>`
 - **Total Chats Discovered**: **741 chats / groups / channels**
 - **Storage Target**: 5 TiB Google Drive via `rclone crypt` (`gdrive-crypt:`)
 - **Execution Mode**: MTProto User Client (`backup_account.py`)

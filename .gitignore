@@ -1,4 +1,4 @@
-﻿# Git ignore rules for Telegram Automation
+# Git ignore rules for Telegram Automation
 .venv/
 __pycache__/
 *.pyc
@@ -20,4 +20,8 @@ rclone.conf
 
 # Local SQLite vault database
 vault.db*
+
+# Exported data & link dumps
+exported_links.*
+*.csv
 

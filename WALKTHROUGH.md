@@ -2,8 +2,8 @@
 ## Comprehensive Technical & Functional Walkthrough Specification
 
 - **System Title**: Telegram Cloud Vault & Streaming Media Player
-- **Jira Project**: `TCVA` (Board: [<jira-project-board>](<jira-project-board>))
-- **Source Code Repository**: [https://github.com/sivaram311/telegram-cloud-vault](https://github.com/sivaram311/telegram-cloud-vault)
+- **Jira Project**: `TCVA` (Board: `<jira-project-board>`)
+- **Source Code Repository**: https://github.com/sivaram311/telegram-cloud-vault
 - **Primary Workspace**: `E:\MyWorkspace\telegram-automation`
 - **Edge Routing / DNS**: `https://<vault-domain>` (DEV port `3450`)
 - **Document Version**: `1.0.0`

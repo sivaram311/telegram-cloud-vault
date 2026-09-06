@@ -1,4 +1,4 @@
-﻿# SYSTEM HANDOFF: TELEGRAM CLOUD VAULT (DEV)
+# SYSTEM HANDOFF: TELEGRAM CLOUD VAULT (DEV)
 
 **Date**: September 6, 2026
 **Workspace**: E:\MyWorkspace\telegram-automation
@@ -10,10 +10,10 @@
 ---
 
 ## 1. Executive Summary & Core Milestones
-The Telegram Cloud Vault project automates full account media backup into AES-256 encrypted Google Drive storage (clone crypt) with:
+The Telegram Cloud Vault project automates full account media backup into AES-256 encrypted Google Drive storage (rclone crypt) with:
 * **Zero Persistent Local Disk Footprint**: Persistent media storage is strictly on Google Drive. Transient buffers and caches operate within dynamic virtual disks (S:\ and T:\).
 * **High-Speed MTProto Engine**: Upgraded from standard sequential downloads to a 4-connection parallel chunking architecture with native C-extension crypto (cryptg), achieving speeds of **40 to 64 Mbps** (~30x to 50x acceleration over Telegram MTProto).
-* **Enterprise Security & Auth**: Authenticated through the Production Centralized Security System (CSS) at http://127.0.0.1:5900 (https://<css-domain>).
+* **Enterprise Security & Auth**: Authenticated through the Production Centralized Security System (CSS) at http://127.0.0.1:5900.
 * **Instant Media Streaming & Browsing**: Web portal with server-side pagination, real-time sync metrics, search, and pre-generated WebP thumbnail caching.
 
 ---
@@ -28,7 +28,7 @@ The Telegram Cloud Vault project automates full account media backup into AES-25
 | **Encrypted Remote** | gdrive-crypt:TelegramBackup | AES-256 Google Drive target |
 | **FastAPI Web Portal** | 127.0.0.1:3450 | User portal (https://<vault-domain>) |
 | **Rclone Streamer** | 127.0.0.1:3455 | Native RAM HTTP streamer proxying encrypted Drive files directly |
-| **Authentication** | http://127.0.0.1:5900 | Centralized Security System (CSS client 	elegram-vault) |
+| **Authentication** | http://127.0.0.1:5900 | Centralized Security System (CSS client telegram-vault) |
 
 ---
 
