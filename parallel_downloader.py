@@ -97,13 +97,15 @@ class MultiConnectionDownloader:
                         break
 
                     offset = part * CHUNK_SIZE
-                    limit = min(CHUNK_SIZE, file_size - offset)
-                    req = functions.upload.GetFileRequest(loc, offset=offset, limit=limit)
+                    req = functions.upload.GetFileRequest(loc, offset=offset, limit=CHUNK_SIZE)
 
                     for retry in range(5):
                         try:
                             res = await sender.send(req)
                             chunk_data = res.bytes
+                            # Trim excess padding bytes if this is the final chunk
+                            if offset + len(chunk_data) > file_size:
+                                chunk_data = chunk_data[:file_size - offset]
 
                             async with file_lock:
                                 with open(dest_path, "r+b") as f:
