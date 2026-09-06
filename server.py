@@ -1,11 +1,15 @@
 ﻿import os
 import mimetypes
 import httpx
+import csv
+import io
+import json
 from pathlib import Path
 from typing import Optional
-from fastapi import FastAPI, HTTPException, Request, Response, Query
+from fastapi import FastAPI, HTTPException, Request, Response, Query, Depends
 from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse
 import db
+import auth
 
 app = FastAPI(title="Telegram Encrypted Media Vault & Search Engine")
 
@@ -33,7 +37,7 @@ async def home():
     return FileResponse(INDEX_HTML)
 
 @app.get("/api/stats")
-async def stats():
+async def stats(user: dict = Depends(auth.verify_token)):
     return db.get_vault_stats()
 
 @app.get("/api/media")
@@ -41,7 +45,8 @@ async def list_media(
     search: Optional[str] = Query(None),
     chat: Optional[str] = Query(None),
     limit: int = Query(200, le=1000),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
+    user: dict = Depends(auth.verify_token)
 ):
     with db.get_db() as conn:
         query = """
@@ -85,7 +90,8 @@ async def search_messages(
     query: Optional[str] = Query(None),
     has_links: Optional[bool] = Query(False),
     limit: int = Query(100, le=500),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
+    user: dict = Depends(auth.verify_token)
 ):
     with db.get_db() as conn:
         sql = """
@@ -106,9 +112,51 @@ async def search_messages(
         rows = conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
 
+@app.get("/api/export/links")
+async def export_links(format: str = "json", user: dict = Depends(auth.verify_token)):
+    with db.get_db() as conn:
+        rows = conn.execute("""
+            SELECT c.chat_id, c.chat_title, m.message_id, m.sender_name, m.date, m.links_json, m.text_content
+            FROM messages m
+            JOIN chats c ON m.chat_id = c.chat_id
+            WHERE m.links_json != '[]' AND m.links_json IS NOT NULL
+            ORDER BY c.chat_title, m.date DESC
+        """).fetchall()
+
+        all_links = []
+        for r in rows:
+            try:
+                links = json.loads(r["links_json"])
+                for link in links:
+                    all_links.append({
+                        "chat_title": r["chat_title"],
+                        "chat_id": r["chat_id"],
+                        "message_id": r["message_id"],
+                        "sender": r["sender_name"],
+                        "date": r["date"],
+                        "url": link,
+                        "message_text": r["text_content"]
+                    })
+            except Exception:
+                continue
+
+        if format.lower() == "csv":
+            output = io.StringIO()
+            writer = csv.writer(output)
+            writer.writerow(["Chat Title", "Chat ID", "Message ID", "Sender", "Date", "Extracted URL", "Full Message Text"])
+            for item in all_links:
+                writer.writerow([item["chat_title"], item["chat_id"], item["message_id"], item["sender"], item["date"], item["url"], item["message_text"]])
+            return Response(
+                content=output.getvalue(),
+                media_type="text/csv",
+                headers={"Content-Disposition": "attachment; filename=telegram_extracted_links.csv"}
+            )
+        
+        return all_links
+
 @app.get("/stream/{full_path:path}")
 @app.get("/stream")
-async def stream_file(request: Request, full_path: Optional[str] = None, path: Optional[str] = None):
+async def stream_file(request: Request, full_path: Optional[str] = None, path: Optional[str] = None, user: dict = Depends(auth.verify_token)):
     target_path = full_path or path
     if not target_path:
         raise HTTPException(status_code=400, detail="Path required")
